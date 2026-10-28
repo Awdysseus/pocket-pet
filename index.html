@@ -49,6 +49,8 @@ canvas{display:block;width:100%;height:auto}
 .gbar button{flex:1;min-height:56px;border:0;border-radius:14px;font:inherit;font-size:20px;font-weight:700;background:var(--accent);color:#fff}
 .gbar button.q{flex:.6;background:var(--card);color:var(--accent);font-size:16px}
 .hz{position:relative}
+#gg,#gh{display:none}
+.gbar.pv{flex-wrap:wrap}.gbar.pv button{flex:1 1 46%;min-height:50px}.gbar.pv .q{flex:1 1 100%;order:5;min-height:42px;font-size:15px}
 .back{position:fixed;inset:0;background:rgba(0,0,0,.38);opacity:0;pointer-events:none;transition:opacity .25s;z-index:20}
 .back.on{opacity:1;pointer-events:auto}
 .sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;max-width:480px;margin:0 auto;max-height:82%;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;background:var(--bg);border-radius:20px 20px 0 0;padding:8px max(24px,env(safe-area-inset-left,0px)) calc(28px + env(safe-area-inset-bottom,0px)) max(24px,env(safe-area-inset-right,0px));transform:translateY(105%);transition:transform .28s cubic-bezier(.2,.8,.2,1)}
@@ -81,7 +83,7 @@ canvas{display:block;width:100%;height:auto}
   <button data-m="light" id="lightBtn"><span>🌙</span>Lights</button>
 </nav>
 <nav class="gbar" id="gbar">
-  <button class="q" id="gq">Quit</button><button id="gl">◀</button><button id="gr">▶</button>
+  <button class="q" id="gq">Quit</button><button id="gl">◀</button><button id="gr">▶</button><button id="gg">Guard</button><button id="gh">Heal</button>
 </nav>
 <div class="back" id="back"></div>
 <div class="sheet" id="sheet"></div>
@@ -170,6 +172,8 @@ function mood(){
   const l=Math.min(pet.hunger,pet.happy,pet.clean,pet.energy);return l<25?'sad':l>60?'happy':'neutral';
 }
 function status(){
+  if(pet.alive&&!pet.sleeping&&pet.hunger<=0)return'Starving! Feed me!';
+  if(pet.alive&&!pet.sleeping&&(pet.load||0)>80)return'Feeling stuffed…';
   switch(mood()){
     case'dead':return'Your pet has passed away.';case'sleeping':return'Sleeping… zzz';case'sick':return'Feeling sick. Try medicine.';
     case'sad':if(pet.hunger<25)return'So hungry!';if(pet.clean<25)return'Needs a clean-up!';if(pet.energy<25)return'Sleepy…';return'Wants to play!';
@@ -183,7 +187,7 @@ function tick(){
   pet.clean=clamp(pet.clean-.08*mins);pet.energy=clamp(pet.energy+(pet.sleeping?2:-.07)*mins);
   if(pet.sleeping&&pet.energy>=100)pet.sleeping=false;
   if(Math.min(pet.hunger,pet.happy,pet.clean)<=0)pet.health=clamp(pet.health-.2*mins);else pet.health=clamp(pet.health+.05*mins);
-  pet.cs=(pet.cs||0)+(pet.hunger+pet.happy+pet.clean+pet.energy)/400*mins;pet.cm=(pet.cm||0)+mins;
+  if(pet.hunger<=0)pet.health=clamp(pet.health-.3*mins);pet.load=Math.max(0,(pet.load||0)-mins);pet.cs=(pet.cs||0)+(pet.hunger+pet.happy+pet.clean+pet.energy)/400*mins;pet.cm=(pet.cm||0)+mins;
   if(Math.min(pet.hunger,pet.happy,pet.clean)<=0){if(!pet.mf){pet.mis=(pet.mis||0)+1;pet.mf=1}}else pet.mf=0;
   if(pet.health<=0)pet.alive=false;
 }
@@ -310,7 +314,7 @@ function paintPet(g,c,m,st,px,cx,cy,dy,col,xl){
 }
 function drawPet(m,px,cx,cy,dy){const st=stage(),A=accCells(st);return paintPet(ctx,cells(pet.sp,st,pet.form).concat(A.ink),m,st,px,cx,cy,dy,null,A.lcd)}
 function thumb(i){const k=document.createElement('canvas');k.width=k.height=64;const g=k.getContext('2d');INK=css('--ink');LCD=css('--lcd');g.fillStyle=LCD;g.fillRect(0,0,64,64);paintPet(g,cells(i,'teen',null),'happy','teen',3,32,32,0);return k.toDataURL()}
-function pickSpecies(){openSheet('Choose an egg',[{rows:SP.map((s,k)=>({i:'<img src="'+thumb(k)+'" width="40" height="40" style="image-rendering:pixelated;border-radius:6px">',t:s.n,s:TN[s.y]+' type \u00b7 '+s.d,fn:()=>{closeSheet();const o=pet;pet=fresh(k);pet.inv=o.inv||{};pet.home=o.home||[];pet.bg=o.bg||'';pet.pts=o.pts;pet.name=s.n;beep(SND.hatch);save();render()}}))}])}
+function pickSpecies(){openSheet('Choose an egg',[{rows:SP.map((s,k)=>({i:'<img src="'+thumb(k)+'" width="40" height="40" style="image-rendering:pixelated;border-radius:6px">',t:s.n,s:TN[s.y]+' type \u00b7 '+s.d,fn:()=>{closeSheet();const o=pet;pet=fresh(k);pet.inv=o.inv||{};pet.home=o.home||[];pet.bg=o.bg||'';pet.pts=o.pts;pet.rec=o.rec;pet.name=s.n;beep(SND.hatch);save();render()}}))}])}
 
 /* ---- trek: side-scrolling adventure with battles ---- */
 const BIO=['MEADOW','DESERT','SNOWFIELD','CAVE','BEACH','RUINS'],AMP=[.9,1.3,.5,.4,.3,.6];
@@ -465,16 +469,31 @@ const mul=a=>()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.i
 let peer=null,conn=null;
 const pvpClean=()=>{try{conn&&conn.close()}catch(e){}try{peer&&peer.destroy()}catch(e){}conn=peer=null};
 function pvpMenu(){openSheet('Online Battle',[{rows:[
+  {i:'🏆',t:'Record: '+((pet.rec||{}).w||0)+'W – '+((pet.rec||{}).l||0)+'L',s:'Title: '+rankT((pet.rec||{}).w||0),fn:()=>{}},
   {i:'📣',t:'Host a battle',s:'Get a code to share with a friend',fn:()=>pvpStart('host')},
   {i:'🔑',t:'Join a battle',s:'Enter your friend’s code',fn:()=>{closeSheet();const c=(prompt('Enter your friend’s battle code')||'').trim().toUpperCase();if(c)pvpStart('join',c)}}]}])}
+const GAIN={rice:30,burger:45,salad:25,cake:12,candy:8};
+const rankT=w=>w>=25?'Champion':w>=10?'Veteran':w>=3?'Challenger':'Newcomer';
+function pvpMe(){const i=IDX[stage()],mhp=18+i*6+Math.floor(pet.health/10)+(pet.form===1?6:0);
+  return{n:pet.name,sp:pet.sp,st:stage(),form:pet.form,worn:pet.worn||{},hp:mhp,mhp,atk:3+i*2+Math.floor(pet.happy/30)+(pet.form===2?2:0),ty:SP[pet.sp].y,sp2:3,hl:2}}
+function renamePet(){
+  closeSheet();if(pet.pts<200){beep(SND.no);return}
+  const n=(prompt('New name for your pet (up to 12 characters). Fee: 200 ★')||'').replace(/[<>&"]/g,'').trim().slice(0,12);
+  if(!n||n===pet.name)return;
+  pet.pts-=200;pet.name=n;save();beep(SND.coin);render();flash('Paperwork filed. Welcome, '+n+'.');
+}
+function pvpGo(){
+  const g=game;g.me=pvpMe();g.opp=null;g.A=g.B=null;g.my=g.their=g.seed=null;g.log=[];g.rq=g.orq=false;g.phase='wait2';g.res='';
+  try{conn.send({t:'hello',f:g.me})}catch(e){}
+  if(g.stash){const d=g.stash;g.stash=null;pvpData(d)}
+}
 function pvpStart(role,code){
   closeSheet();
   if(typeof Peer==='undefined'){beep(SND.no);flash('Online play needs an internet connection.');return}
   if(!ok()||pet.energy<=15){beep(SND.no);flash(pet.sleeping?'Your pet is asleep.':'Too tired to battle.');return}
-  const i=IDX[stage()],mhp=18+i*6+Math.floor(pet.health/10)+(pet.form===1?6:0);
-  const me={n:pet.name,sp:pet.sp,st:stage(),form:pet.form,worn:pet.worn||{},hp:mhp,mhp,atk:3+i*2+Math.floor(pet.happy/30)+(pet.form===2?2:0),ty:SP[pet.sp].y,sp2:3};
+  const me=pvpMe();
   const g=game={kind:'pvp',role,code:code||'',phase:'wait',me,opp:null,A:null,B:null,my:null,their:null,seed:null,log:[],res:'',err:'',until:0};
-  $('bar').style.display='none';$('gbar').style.display='flex';$('gl').style.display=$('gr').style.display='block';
+  $('bar').style.display='none';$('gbar').classList.add('pv');$('gbar').style.display='flex';$('gl').style.display=$('gr').style.display='block';
   const link=c=>{conn=c;const hi=()=>c.send({t:'hello',f:me});if(c.open)hi();else c.on('open',hi);c.on('data',pvpData);c.on('close',pvpClosed);c.on('error',pvpClosed)};
   try{
     if(role==='host'){
@@ -493,9 +512,10 @@ function pvpStart(role,code){
 }
 function pvpData(d){
   const g=game;if(!g||g.kind!=='pvp'||!d)return;
-  if(d.t==='hello'){const f=d.f||{},c=(v,a,b,z)=>Math.min(b,Math.max(a,+v||z));
-    g.opp={n:String(f.n||'Rival').slice(0,12),sp:c(f.sp,0,9,0)|0,st:IDX[f.st]!=null?f.st:'child',form:[0,1,2].includes(f.form)?f.form:null,worn:(f.worn&&typeof f.worn==='object')?f.worn:{},hp:c(f.hp,1,80,20),atk:c(f.atk,1,30,3),ty:c(f.ty,0,3,3)|0,sp2:3};g.opp.mhp=g.opp.hp;
-    g.A=g.role==='host'?g.me:g.opp;g.B=g.role==='host'?g.opp:g.me;if(g.phase==='wait'){g.phase='choose';beep(SND.alert)}}
+  if(d.t==='hello'){if(g.phase==='over'){g.stash=d;return}const f=d.f||{},c=(v,a,b,z)=>Math.min(b,Math.max(a,+v||z));
+    g.opp={n:String(f.n||'Rival').slice(0,12),sp:c(f.sp,0,9,0)|0,st:IDX[f.st]!=null?f.st:'child',form:[0,1,2].includes(f.form)?f.form:null,worn:(f.worn&&typeof f.worn==='object')?f.worn:{},hp:c(f.hp,1,80,20),atk:c(f.atk,1,30,3),ty:c(f.ty,0,3,3)|0,sp2:3,hl:2};g.opp.mhp=g.opp.hp;
+    g.A=g.role==='host'?g.me:g.opp;g.B=g.role==='host'?g.opp:g.me;if(g.phase==='wait'||g.phase==='wait2'){g.phase='choose';beep(SND.alert)}}
+  else if(d.t==='rematch'){g.orq=true;if(g.rq)pvpGo()}
   else if(d.t==='move'){g.their=d.m===1?1:0;if(d.seed!=null)g.seed=d.seed|0;pvpTry()}
 }
 function pvpTry(){
@@ -504,31 +524,38 @@ function pvpTry(){
 }
 function pvpResolve(g){
   const r=mul(g.seed),F=[g.A,g.B],C=[g.ca,g.cb],log=[];
+  F.forEach((f,i)=>f.gd=C[i]===2);
   (g.A.atk>=g.B.atk?[0,1]:[1,0]).forEach(i=>{
-    const a=F[i],d=F[1-i];if(a.hp<=0||d.hp<=0)return;
-    const sp=C[i]===1&&a.sp2>0;if(sp)a.sp2--;
+    const a=F[i],d=F[1-i],c=C[i];if(a.hp<=0||d.hp<=0)return;
+    if(c===2){log.push(a.n+' braces!');return}
+    if(c===3){if(a.hl>0){a.hl--;const h=Math.round(a.mhp*.3);a.hp=Math.min(a.mhp,a.hp+h);log.push(a.n+' heals '+h+'!')}else log.push(a.n+' has no heals left');return}
+    const sp=c===1&&a.sp2>0;if(sp)a.sp2--;
     const m=sp?tm(a.ty,d.ty):1;
     if(!sp&&r()<.1){log.push(a.n+' missed!');return}
-    const dm=Math.round((a.atk+Math.floor(r()*3))*(sp?1.8:1)*m);d.hp=Math.max(0,d.hp-dm);
-    log.push(a.n+(sp?' Special: ':' hits: ')+dm+(m>1?' Super effective!':m<1?' Weak...':''));
+    let dm=Math.round((a.atk+Math.floor(r()*3))*(sp?1.8:1)*m);if(d.gd)dm=Math.max(1,Math.round(dm/2));
+    d.hp=Math.max(0,d.hp-dm);log.push(a.n+(sp?' Special: ':' hits: ')+dm+(d.gd?' (blocked)':'')+(m>1?' Super effective!':m<1?' Weak...':''));
   });
   g.log=log;beep(SND.hit);
 }
 function pvpEnd(msg,win,pts){
   const g=game;if(!g||g.phase==='over')return;
-  g.phase='over';g.res=msg;if(pts){pet.pts+=pts;if(win)pet.wins=(pet.wins||0)+1}
+  g.phase='over';g.res=msg;if(g.opp){const R=pet.rec=pet.rec||{w:0,l:0};if(win)R.w++;else R.l++}
+  if(pts){pet.pts+=pts;if(win)pet.wins=(pet.wins||0)+1}
   pet.energy=clamp(pet.energy-10);save();beep(win?SND.win:SND.lose);render();
 }
-function pvpClosed(){const g=game;if(g&&g.kind==='pvp'&&g.phase!=='over')pvpEnd(g.opp?'OPPONENT LEFT +5 ★':(g.err||'CONNECTION LOST'),!!g.opp,g.opp?5:0)}
+function pvpClosed(){const g=game;if(g&&g.kind==='pvp'){g.left=true;if(g.phase!=='over')pvpEnd(g.opp?'OPPONENT LEFT +5 ★':(g.err||'CONNECTION LOST'),!!g.opp,g.opp?5:0)}}
 function pvpQuit(){pvpClean();quitGame()}
 function pvpBtn(s){
   const g=game;
+  if(g.phase==='over'){
+    if(s<0&&g.opp&&!g.left&&!g.rq){if(pet.energy<=15||pet.sleeping){beep(SND.no);return}g.rq=true;try{conn.send({t:'rematch'})}catch(e){}if(g.orq)pvpGo()}
+    return}
   if(g.phase==='wait'){
     if(s<0&&g.role==='host'&&g.code){const t='Battle me in Pocket Pet! Code: '+g.code;
       if(navigator.share)navigator.share({text:t,url:location.href.split('#')[0]}).catch(()=>{});else try{navigator.clipboard.writeText(t)}catch(e){}}
     return}
   if(g.phase!=='choose'||g.my!=null)return;
-  const m=s>0?1:0;if(m===1&&g.me.sp2<=0){beep(SND.no);return}
+  const m=s<0?0:s;if((m===1&&g.me.sp2<=0)||(m===3&&g.me.hl<=0)){beep(SND.no);return}
   g.my=m;const p={t:'move',m};if(g.role==='host'){g.seed=Math.random()*4294967296|0;p.seed=g.seed}
   try{conn.send(p)}catch(e){}pvpTry();
 }
@@ -536,12 +563,13 @@ function pvpFrame(now){
   const g=game;
   if(g.err&&g.phase==='wait'){g.phase='over';g.res=g.err;beep(SND.no)}
   const ph=g.phase;
-  setT('gq',ph==='over'?'Done':ph==='wait'?'Cancel':'Forfeit');setT('gl',ph==='wait'?'Share':'Attack');setT('gr','Special');
-  $('gl').style.display=(ph==='choose'||(ph==='wait'&&g.role==='host'))?'block':'none';$('gr').style.display=ph==='choose'?'block':'none';
+  setT('gq',ph==='over'?'Done':ph==='wait'?'Cancel':'Forfeit');setT('gl',ph==='wait'?'Share':ph==='over'?'Rematch':'Attack');setT('gr','Special');
+  $('gl').style.display=(ph==='choose'||(ph==='wait'&&g.role==='host')||(ph==='over'&&g.opp&&!g.left&&!g.rq))?'block':'none';$('gr').style.display=$('gg').style.display=$('gh').style.display=ph==='choose'?'block':'none';
   if(ph==='wait'){
     txt(g.role==='host'?'BATTLE CODE':'JOINING '+g.code,W/2,60,16);if(g.role==='host')txt(g.code||'....',W/2,120,54);
     txt(g.role==='host'?'Waiting for a friend...':'Connecting...',W/2,175,13);return}
-  if(ph==='over'){drawPet(g.me.hp>0?'happy':'sad',8,W/2,84,0);txt(g.res,W/2,160,15);return}
+  if(ph==='wait2'){txt('REMATCH',W/2,100,26);txt('Getting ready...',W/2,150,13);return}
+  if(ph==='over'){drawPet(g.me.hp>0?'happy':'sad',8,W/2,78,0);txt(g.res,W/2,150,15);if(g.opp){const R=pet.rec||{w:0,l:0};txt(R.w+'W - '+R.l+'L · '+rankT(R.w),W/2,172,12);txt(g.rq?'Waiting for rematch...':g.left?'Opponent left':'',W/2,192,11)}return}
   if(ph==='show'&&now>g.until){
     if(g.A.hp<=0||g.B.hp<=0){const win=g.me.hp>0;pvpEnd(win?'YOU WIN! +10 ★':'YOU LOST +2 ★',win,win?10:2);return}
     g.my=g.their=g.seed=null;g.phase='choose'}
@@ -573,7 +601,7 @@ function endGame(){
   save();beep(s>0?SND.win:SND.lose);
   $('gq').textContent='Done';$('gl').style.display=$('gr').style.display='none';render();
 }
-function quitGame(){game=null;$('gbar').style.display='none';$('bar').style.display='flex';render()}
+function quitGame(){game=null;$('gbar').classList.remove('pv');$('gg').style.display=$('gh').style.display='none';$('gbar').style.display='none';$('bar').style.display='flex';render()}
 function gPick(side){ // side: -1 left, 1 right
   if(!game||game.over)return;
   if(game.kind==='pvp')return pvpBtn(side);
@@ -615,14 +643,14 @@ function drawGame(now){
     txt('★ '+g.score,12,24,16,'left');txt(Math.max(0,Math.ceil(20-el))+'s',W-12,24,16,'right');
   }
 }
-$('gl').onclick=()=>gPick(-1);$('gr').onclick=()=>gPick(1);$('gq').onclick=()=>{if(game&&game.kind==='pvp'){pvpQuit();return}if(game&&game.kind==='deco'){cv.style.touchAction='';save();quitGame();return}if(game&&game.kind==='trek'&&!game.over){trekBtn(0);return}if(game&&!game.over)endGame();quitGame()};
+$('gg').onclick=()=>gPick(2);$('gh').onclick=()=>gPick(3);$('gl').onclick=()=>gPick(-1);$('gr').onclick=()=>gPick(1);$('gq').onclick=()=>{if(game&&game.kind==='pvp'){pvpQuit();return}if(game&&game.kind==='deco'){cv.style.touchAction='';save();quitGame();return}if(game&&game.kind==='trek'&&!game.over){trekBtn(0);return}if(game&&!game.over)endGame();quitGame()};
 
 /* ---- actions & menus ---- */
 function busy(){return anim||game}
 function feed(k){
   if(!ok()){beep(SND.no);flash(pet.sleeping?'Your pet is asleep.':'Not hungry right now.');return}
   if(pet.pts<COST[k]){beep(SND.no);flash('Not enough ★ points.');return}
-  closeSheet();pet.pts-=COST[k];FOODFX[k]();pet.energy=clamp(pet.energy+({rice:4,burger:8,salad:3,cake:6,candy:6}[k]||0));save();
+  closeSheet();pet.pts-=COST[k];const L=(pet.load||0)+GAIN[k];FOODFX[k]();pet.load=L;if(L>100){pet.health=clamp(pet.health-Math.max(4,(L-100)*.35));pet.happy=clamp(pet.happy-6);flash('Too much food! Tummy ache.')}pet.energy=clamp(pet.energy+({rice:4,burger:8,salad:3,cake:6,candy:6}[k]||0));save();
   anim={kind:'eat',f:k,t0:performance.now(),dur:2100,bites:0};render();
 }
 function clean(){
@@ -670,7 +698,8 @@ const MENUS={
     openSheet('Care',[{rows:[
       {i:'🫧',t:'Clean up',s:'Wash away the mess',fn:clean},
       {i:'💊',t:'Medicine',s:'Restores health when your pet is unwell',fn:medicine},
-      {i:'\ud83e\udd5a',t:'Adopt a new egg',s:'Replaces your current pet',fn:pickSpecies}]}]);
+      {i:'\ud83e\udd5a',t:'Adopt a new egg',s:'Replaces your current pet',fn:pickSpecies},
+      {i:'🪪',t:'Change name',s:'Administrative fee for legally renaming your pet',c:'★ 200',dis:pet.pts<200,fn:renamePet}]}]);
   },
   light(){light()}
 };
