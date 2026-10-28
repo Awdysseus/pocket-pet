@@ -590,7 +590,7 @@ function startGame(kind){
   closeSheet();
   game=kind==='guess'?{kind,round:0,score:0,phase:'ask',dir:0,pick:0,until:0,over:false}
     :kind==='trek'?trekInit():{kind,lane:1,score:0,items:[],t0:performance.now(),spawn:0,last:performance.now(),over:false};
-  $('bar').style.display='none';$('gbar').style.display='flex';$('gq').textContent='Quit';
+  $('bar').style.display='none';$('gbar').style.display='flex';$('gq').textContent='Quit';setT('gl','◀');setT('gr','▶');
   $('gl').style.display=$('gr').style.display='block';
   beep(SND.tap);render();
 }
