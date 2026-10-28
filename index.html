@@ -76,7 +76,7 @@ canvas{display:block;width:100%;height:auto}
 <nav class="bar" id="bar">
   <button data-m="feed"><span>🍙</span>Feed</button>
   <button data-m="play"><span>🎮</span>Play</button>
-  <button data-m="care"><span>🧼</span>Care</button>
+  <button data-m="care"><span>🧼</span>Care</button><button data-m="shop"><span>🛍️</span>Shop</button>
   <button data-m="light" id="lightBtn"><span>🌙</span>Lights</button>
 </nav>
 <nav class="gbar" id="gbar">
@@ -88,7 +88,7 @@ canvas{display:block;width:100%;height:auto}
 <script>
 const KEY='pocketpet.v1', MKEY='pocketpet.mute';
 const clamp=v=>Math.min(100,Math.max(0,v));
-const fresh=(sp)=>({sp:sp||0,cs:0,cm:0,mis:0,wins:0,form:null,name:'Pixel',born:Date.now(),last:Date.now(),hunger:80,happy:80,energy:80,clean:80,health:100,pts:10,sleeping:false,alive:true});
+const fresh=(sp)=>({inv:{},worn:{},home:[],bg:'',sp:sp||0,cs:0,cm:0,mis:0,wins:0,form:null,name:'Pixel',born:Date.now(),last:Date.now(),hunger:80,happy:80,energy:80,clean:80,health:100,pts:10,sleeping:false,alive:true});
 let pet=null,muted=false;
 try{pet=JSON.parse(localStorage.getItem(KEY))}catch(e){}
 try{muted=localStorage.getItem(MKEY)==='1'}catch(e){}
@@ -96,6 +96,7 @@ if(!pet||typeof pet.born!=='number')pet=fresh();
 if(typeof pet.pts!=='number')pet.pts=10;
 if(!pet.fx1){pet.fx1=1;if(pet.pts>100)pet.pts=20}
 if(typeof pet.sp!=='number')pet.sp=0;
+pet.inv=pet.inv||{};pet.worn=pet.worn||{};pet.home=pet.home||[];pet.bg=pet.bg||'';
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(pet))}catch(e){}};
 const $=id=>document.getElementById(id);
 
@@ -105,8 +106,8 @@ function beep(notes){
   buzz(notes);
   if(muted||!notes)return;
   try{
-    audio=audio||new(window.AudioContext||window.webkitAudioContext)();
-    if(audio.state==='suspended')audio.resume();
+    if(audio&&audio.state==='closed')audio=null;audio=audio||new(window.AudioContext||window.webkitAudioContext)();
+    if(audio.state!=='running')audio.resume();
     let t=audio.currentTime+.01;
     notes.forEach(([f,d])=>{
       if(f){const o=audio.createOscillator(),g=audio.createGain();o.type='square';o.frequency.value=f;
@@ -114,6 +115,9 @@ function beep(notes){
       t+=d});
   }catch(e){}
 }
+const dropAudio=()=>{try{audio&&audio.close()}catch(e){}audio=null};
+document.addEventListener('visibilitychange',dropAudio);addEventListener('pagehide',dropAudio);addEventListener('pageshow',dropAudio);
+addEventListener('pointerdown',()=>{if(muted)return;try{if(!audio)audio=new(window.AudioContext||window.webkitAudioContext)();if(audio.state!=='running')audio.resume()}catch(e){}},true);
 const SND={
   feed:[[880,.07],[0,.04],[880,.07],[0,.04],[1175,.12]],play:[[523,.08],[659,.08],[784,.08],[1047,.16]],
   clean:[[1568,.05],[1319,.05],[1047,.05],[784,.09]],sleep:[[784,.12],[587,.12],[392,.22]],wake:[[392,.1],[587,.1],[784,.18]],
@@ -232,7 +236,8 @@ function frame(){
   const now=performance.now(),bob=Math.floor(now/600)%2===1;
   INK=css('--ink');LCD=css('--lcd');
   ctx.fillStyle=LCD;ctx.fillRect(0,0,W,H);
-  if(game){drawGame(now);return}
+  if(game&&game.kind!=='deco'){drawGame(now);return}
+  homeBG();
   const st=stage(),px=PX[st],moving=bob&&pet.alive&&!pet.sleeping;
   let m=mood(),dirty=st!=='egg'&&pet.clean<30,a=anim;
   const t=a?now-a.t0:0;
@@ -258,6 +263,7 @@ function frame(){
     if(pet.sleeping)txt('z Z',W-50,32,24);
   }
   if(a&&t>=a.dur){const f=a.end;anim=null;if(f)f();render()}
+  if(game&&game.kind==='deco')decoOverlay();
 }
 const poopOn=d=>d;
 function poop(r){ctx.fillStyle=INK;[[0,2],[1,2],[2,2],[1,1],[1,0]].forEach(([x,y])=>ctx.fillRect(r.ox+r.w+8+x*5,r.oy+r.h-20+y*5,5,5))}
@@ -293,17 +299,17 @@ function cells(sp,st,form){
   if(st==='master')c.push([-1,2],[-2,1],[12,2],[13,1],[-1,3],[12,3],[-2,0],[13,0]);
   return c;
 }
-function paintPet(g,c,m,st,px,cx,cy,dy,col){
+function paintPet(g,c,m,st,px,cx,cy,dy,col,xl){
   const xs=c.map(p=>p[0]),ys=c.map(p=>p[1]),x0=Math.min(...xs),y0=Math.min(...ys),w=(Math.max(...xs)-x0+1)*px,h=(Math.max(...ys)-y0+1)*px;
   const ox=Math.round(cx-w/2)-x0*px,oy=Math.round(cy-h/2+dy)-y0*px,gh=px>8?3:2;
   const d=(a,b)=>c.forEach(([x,y])=>g.fillRect(ox+a+x*px,oy+b+y*px,px,px));
   g.fillStyle=col||INK;g.globalAlpha=.13;d(gh,gh);g.globalAlpha=1;d(0,0);
-  if(st!=='egg'){g.fillStyle=LCD;FACE[m].forEach(([x,y])=>g.fillRect(ox+x*px,oy+y*px,px,px))}
+  if(st!=='egg'){g.fillStyle=LCD;FACE[m].concat(xl||[]).forEach(([x,y])=>g.fillRect(ox+x*px,oy+y*px,px,px))}
   return{ox:ox+x0*px,oy:oy+y0*px,w,h};
 }
-function drawPet(m,px,cx,cy,dy){const st=stage();return paintPet(ctx,cells(pet.sp,st,pet.form),m,st,px,cx,cy,dy)}
+function drawPet(m,px,cx,cy,dy){const st=stage(),A=accCells(st);return paintPet(ctx,cells(pet.sp,st,pet.form).concat(A.ink),m,st,px,cx,cy,dy,null,A.lcd)}
 function thumb(i){const k=document.createElement('canvas');k.width=k.height=64;const g=k.getContext('2d');INK=css('--ink');LCD=css('--lcd');g.fillStyle=LCD;g.fillRect(0,0,64,64);paintPet(g,cells(i,'teen',null),'happy','teen',3,32,32,0);return k.toDataURL()}
-function pickSpecies(){openSheet('Choose an egg',[{rows:SP.map((s,k)=>({i:'<img src="'+thumb(k)+'" width="40" height="40" style="image-rendering:pixelated;border-radius:6px">',t:s.n,s:TN[s.y]+' type \u00b7 '+s.d,fn:()=>{closeSheet();pet=fresh(k);pet.name=s.n;beep(SND.hatch);save();render()}}))}])}
+function pickSpecies(){openSheet('Choose an egg',[{rows:SP.map((s,k)=>({i:'<img src="'+thumb(k)+'" width="40" height="40" style="image-rendering:pixelated;border-radius:6px">',t:s.n,s:TN[s.y]+' type \u00b7 '+s.d,fn:()=>{closeSheet();const o=pet;pet=fresh(k);pet.inv=o.inv||{};pet.home=o.home||[];pet.bg=o.bg||'';pet.pts=o.pts;pet.name=s.n;beep(SND.hatch);save();render()}}))}])}
 
 /* ---- trek: side-scrolling adventure with battles ---- */
 const BIO=['MEADOW','DESERT','SNOWFIELD','CAVE','BEACH','RUINS'],AMP=[.9,1.3,.5,.4,.3,.6];
@@ -377,6 +383,82 @@ function trekFrame(now){
   txt(g.log,W/2,H-8,12);
 }
 
+/* ---- shop, accessories, home decoration ---- */
+const ACC=[{id:'tophat',n:'Top Hat',slot:'head',p:15,e:'🎩'},{id:'party',n:'Party Hat',slot:'head',p:8,e:'🥳'},{id:'crown',n:'Crown',slot:'head',p:40,e:'👑'},
+ {id:'glasses',n:'Glasses',slot:'face',p:12,e:'👓'},{id:'mustache',n:'Mustache',slot:'face',p:10,e:'🥸'},
+ {id:'scarf',n:'Scarf',slot:'neck',p:14,e:'🧣'},{id:'bowtie',n:'Bow Tie',slot:'neck',p:10,e:'🎀'}];
+const DEC={
+ plant:{n:'Plant',p:12,e:'🪴',g:['#..##..#','.#.##.#.','..####..','...##...','..####..','.######.','.######.','..####..']},
+ lamp:{n:'Lamp',p:15,e:'💡',g:['..####..','.######.','########','...##...','...##...','...##...','...##...','.######.','########']},
+ window:{n:'Window',p:18,e:'🪟',g:['##########','#...##...#','#...##...#','##########','#...##...#','#...##...#','##########']},
+ poster:{n:'Poster',p:10,e:'🖼️',g:['########','#......#','#.#..#.#','#......#','#.####.#','#......#','########']},
+ ball:{n:'Ball',p:6,e:'🎾',g:['.####.','######','#.####','######','######','.####.']},
+ rug:{n:'Rug',p:12,e:'🟫',g:['################','#.#.#.#.#.#.#.#.','################']},
+ clock:{n:'Clock',p:14,e:'🕐',g:['.######.','#......#','#..#...#','#..##..#','#......#','#......#','#......#','.######.']},
+ star:{n:'Star',p:8,e:'⭐',g:['...##...','...##...','########','.######.','..####..','..#..#..','.#....#.','#......#']}};
+const WALL=[{id:'dots',n:'Polka Dots',p:8},{id:'stripes',n:'Stripes',p:8},{id:'bricks',n:'Bricks',p:12},{id:'stars',n:'Starry',p:15}];
+function accCells(st){
+  const ink=[],lcd=[];if(st==='egg')return{ink,lcd};
+  const h=st==='baby'?1:SP[pet.sp].t.length,b=-h,w=pet.worn||{},row=(a,z,y,t)=>{for(let x=a;x<=z;x++)t.push([x,y])};
+  if(w.head==='tophat'){row(3,8,b-1,ink);for(let y=b-4;y<=b-2;y++)row(4,7,y,ink)}
+  if(w.head==='party'){row(4,7,b-1,ink);row(5,6,b-2,ink);row(5,6,b-3,ink)}
+  if(w.head==='crown'){row(3,8,b-1,ink);[[3,b-2],[5,b-2],[6,b-2],[8,b-2]].forEach(c=>ink.push(c))}
+  if(w.face==='glasses'){row(2,4,3,lcd);row(7,9,3,lcd);row(2,4,5,lcd);row(7,9,5,lcd);row(5,6,4,lcd)}
+  if(w.face==='mustache')row(4,7,5,lcd);
+  if(w.neck==='scarf'){row(2,9,8,lcd);lcd.push([9,9])}
+  if(w.neck==='bowtie')[[4,8],[5,8],[6,8],[7,8],[3,7],[3,9],[8,7],[8,9]].forEach(c=>lcd.push(c));
+  return{ink,lcd};
+}
+function homeBG(){
+  const b=pet.bg;ctx.fillStyle=INK;ctx.globalAlpha=.14;
+  if(b==='dots'){for(let y=8;y<H;y+=22)for(let x=(y/22%2)*11+8;x<W;x+=22)ctx.fillRect(x,y,3,3)}
+  else if(b==='stripes'){for(let x=0;x<W;x+=16)ctx.fillRect(x,0,6,H)}
+  else if(b==='bricks'){for(let y=0;y<H;y+=18){ctx.fillRect(0,y,W,2);for(let x=((y/18)%2)*20;x<W;x+=40)ctx.fillRect(x,y,2,18)}}
+  else if(b==='stars'){for(let i=0;i<14;i++){const x=(i*73)%W,y=(i*41)%H;ctx.fillRect(x,y,2,6);ctx.fillRect(x-2,y+2,6,2)}}
+  ctx.globalAlpha=.9;ctx.fillStyle=INK;(pet.home||[]).forEach(d=>grid(DEC[d.id].g,d.x,d.y,4));ctx.globalAlpha=1;
+}
+function decoOverlay(){
+  const g=game,d=pet.home[g.sel];ctx.fillStyle=INK;
+  if(d){const s=DEC[d.id].g;ctx.strokeStyle=INK;ctx.lineWidth=1;ctx.setLineDash([4,3]);ctx.strokeRect(d.x-3,d.y-3,s[0].length*4+6,s.length*4+6);ctx.setLineDash([])}
+  txt(pet.home.length?'DRAG TO MOVE':'TAP ADD TO PLACE ITEMS',W/2,14,11);
+}
+const keep=f=>{const t=$('sheet').scrollTop;f();$('sheet').scrollTop=t};
+function shop(){
+  const own=k=>!!pet.inv[k];
+  const A=ACC.map(a=>{const o=own(a.id),w=pet.worn[a.slot]===a.id;return{i:a.e,t:a.n,s:a.slot[0].toUpperCase()+a.slot.slice(1)+(o?(w?' · worn':' · owned'):''),c:o?(w?'Take off':'Wear'):'★ '+a.p,dis:!o&&pet.pts<a.p,
+    fn:()=>{if(!o){pet.pts-=a.p;pet.inv[a.id]=1;pet.worn[a.slot]=a.id;beep(SND.coin)}else{pet.worn[a.slot]=w?null:a.id;beep(SND.tap)}save();render();keep(shop)}}});
+  const D=Object.entries(DEC).map(([k,d])=>{const o=own(k);return{i:d.e,t:d.n,s:o?'Owned · place it from Decorate':'Home decoration',c:o?'':'★ '+d.p,dis:o||pet.pts<d.p,
+    fn:()=>{pet.pts-=d.p;pet.inv[k]=1;beep(SND.coin);save();render();keep(shop)}}});
+  const Wl=[{id:'',n:'Plain',p:0}].concat(WALL).map(w=>{const o=!w.p||own('w_'+w.id),cur=(pet.bg||'')===w.id;return{i:'🎨',t:w.n,s:cur?'In use':o?'Owned':'Wallpaper',c:o?(cur?'':'Use'):'★ '+w.p,dis:(!o&&pet.pts<w.p)||cur,
+    fn:()=>{if(!o){pet.pts-=w.p;pet.inv['w_'+w.id]=1;beep(SND.coin)}pet.bg=w.id;save();render();keep(shop)}}});
+  openSheet('Shop · ★ '+pet.pts,[{rows:[{i:'🛋️',t:'Decorate home',s:'Place and move items anywhere',fn:startDeco}]},{h:'Accessories',rows:A},{h:'Decorations',rows:D},{h:'Wallpapers',rows:Wl}]);
+}
+function startDeco(){
+  closeSheet();if(!pet.alive||stage()==='egg'){beep(SND.no);flash('Hatch your pet first.');return}
+  game={kind:'deco',sel:-1,drag:false,ox:0,oy:0,over:false};
+  $('bar').style.display='none';$('gbar').style.display='flex';setT('gq','Done');setT('gl','Remove');setT('gr','Add');
+  $('gl').style.display=$('gr').style.display='block';cv.style.touchAction='none';render();
+}
+function decoBtn(s){
+  const g=game;
+  if(s<0){if(g.sel>=0){pet.home.splice(g.sel,1);g.sel=-1;save();beep(SND.tap)}else beep(SND.no);return}
+  const own=Object.entries(DEC).filter(([k])=>pet.inv[k]);
+  openSheet('Add decoration',[{rows:own.length?own.map(([k,d])=>({i:d.e,t:d.n,s:'Tap to place, then drag',fn:()=>{closeSheet();const q=d.g;pet.home.push({id:k,x:Math.round((W-q[0].length*4)/12)*6,y:Math.round((H-q.length*4)/12)*6});game.sel=pet.home.length-1;save();beep(SND.tap)}})):[{i:'🛍️',t:'Nothing owned yet',s:'Buy decorations in the Shop',fn:closeSheet}]}]);
+}
+const cpos=e=>{const r=cv.getBoundingClientRect();return[(e.clientX-r.left)*W/r.width,(e.clientY-r.top)*H/r.height]};
+cv.addEventListener('pointerdown',e=>{
+  const g=game;if(!g||g.kind!=='deco')return;const[x,y]=cpos(e);g.sel=-1;g.drag=false;
+  for(let i=pet.home.length-1;i>=0;i--){const d=pet.home[i],q=DEC[d.id].g;
+    if(x>=d.x-4&&x<=d.x+q[0].length*4+4&&y>=d.y-4&&y<=d.y+q.length*4+4){g.sel=i;g.drag=true;g.ox=x-d.x;g.oy=y-d.y;break}}
+  try{cv.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();
+});
+cv.addEventListener('pointermove',e=>{
+  const g=game;if(!g||g.kind!=='deco'||!g.drag||g.sel<0)return;const[x,y]=cpos(e),d=pet.home[g.sel],q=DEC[d.id].g;
+  d.x=Math.max(0,Math.min(W-q[0].length*4,Math.round((x-g.ox)/6)*6));d.y=Math.max(0,Math.min(H-q.length*4,Math.round((y-g.oy)/6)*6));
+});
+const endDrag=()=>{if(game&&game.kind==='deco'&&game.drag){game.drag=false;save()}};
+cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
+
 /* ---- mini-games ---- */
 const LANES=[60,150,240];
 function startGame(kind){
@@ -398,6 +480,7 @@ function endGame(){
 function quitGame(){game=null;$('gbar').style.display='none';$('bar').style.display='flex';render()}
 function gPick(side){ // side: -1 left, 1 right
   if(!game||game.over)return;
+  if(game.kind==='deco')return decoBtn(side);
   if(game.kind==='trek')return trekBtn(side);
   if(game.kind==='guess'){
     if(game.phase!=='ask')return;
@@ -434,7 +517,7 @@ function drawGame(now){
     txt('★ '+g.score,12,24,16,'left');txt(Math.max(0,Math.ceil(20-el))+'s',W-12,24,16,'right');
   }
 }
-$('gl').onclick=()=>gPick(-1);$('gr').onclick=()=>gPick(1);$('gq').onclick=()=>{if(game&&game.kind==='trek'&&!game.over){trekBtn(0);return}if(game&&!game.over)endGame();quitGame()};
+$('gl').onclick=()=>gPick(-1);$('gr').onclick=()=>gPick(1);$('gq').onclick=()=>{if(game&&game.kind==='deco'){cv.style.touchAction='';save();quitGame();return}if(game&&game.kind==='trek'&&!game.over){trekBtn(0);return}if(game&&!game.over)endGame();quitGame()};
 
 /* ---- actions & menus ---- */
 function busy(){return anim||game}
@@ -508,11 +591,11 @@ function render(){
   {const s=muted?'🔇':'🔊',n=$('snd').firstChild;if(n.textContent!==s)n.textContent=s}$('hap').style.opacity=haptics?1:.45;
   const bar=$('bar');
   if(!pet.alive){bar.innerHTML='<button data-m="egg"><span>🥚</span>New Egg</button>';bar.classList.remove('off')}
-  else{if(!$('lightBtn')||!bar.querySelector('[data-m=feed]'))bar.innerHTML='<button data-m="feed"><span>🍙</span>Feed</button><button data-m="play"><span>🎮</span>Play</button><button data-m="care"><span>🧼</span>Care</button><button data-m="light" id="lightBtn"><span>🌙</span>Lights</button>';
+  else{if(!$('lightBtn')||!bar.querySelector('[data-m=feed]'))bar.innerHTML='<button data-m="feed"><span>🍙</span>Feed</button><button data-m="play"><span>🎮</span>Play</button><button data-m="care"><span>🧼</span>Care</button><button data-m="shop"><span>🛍️</span>Shop</button><button data-m="light" id="lightBtn"><span>🌙</span>Lights</button>';
     const lb0=$('lightBtn'),k0=String(+pet.sleeping),l2=lb0.dataset.s===k0?document.createElement('i'):lb0;lb0.dataset.s=k0;l2.innerHTML='<span>'+(pet.sleeping?'☀️':'🌙')+'</span>'+(pet.sleeping?'Wake':'Lights');
     bar.classList.toggle('off',st==='egg')}
 }
-MENUS.egg=pickSpecies;
+MENUS.egg=pickSpecies;MENUS.shop=shop;
 $('hap').onclick=()=>{haptics=!haptics;try{localStorage.setItem('pocketpet.haptics',haptics?'1':'0')}catch(e){}hz();render()};
 $('snd').onclick=()=>{muted=!muted;try{localStorage.setItem(MKEY,muted?'1':'0')}catch(e){}if(!muted)beep(SND.tap);render()};
 
