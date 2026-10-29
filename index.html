@@ -30,7 +30,7 @@ h1{margin:0;font-size:32px;font-weight:800;letter-spacing:-.02em}
 .sub{color:var(--sub);font-size:14px;font-weight:500;margin-top:2px;text-transform:capitalize}
 .chip{background:var(--card);border-radius:999px;padding:6px 12px;font-weight:700;font-size:15px;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .lcd{position:relative;background:var(--lcd);border-radius:22px;overflow:hidden;box-shadow:inset 0 0 0 3px rgba(0,0,0,.18),0 2px 8px rgba(0,0,0,.12)}
-.lcd::after{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(18,57,15,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(18,57,15,.08) 1px,transparent 1px);background-size:3px 3px}
+.lcd::after{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(color-mix(in srgb,var(--ink) 9%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--ink) 9%,transparent) 1px,transparent 1px);background-size:3px 3px}
 canvas{display:block;width:100%;height:auto}
 .msg{margin:12px 4px 4px;text-align:center;font-weight:700;font-size:15px;min-height:1.3em}
 .card{background:var(--card);border-radius:16px;padding:6px 16px;margin-top:10px}
@@ -99,7 +99,7 @@ if(!pet||typeof pet.born!=='number')pet=fresh();
 if(typeof pet.pts!=='number')pet.pts=10;
 if(!pet.fx1){pet.fx1=1;if(pet.pts>100)pet.pts=20}
 if(typeof pet.sp!=='number')pet.sp=0;
-pet.inv=pet.inv||{};pet.worn=pet.worn||{};pet.home=pet.home||[];pet.bg=pet.bg||'';
+pet.inv=pet.inv||{};pet.worn=pet.worn||{};pet.home=pet.home||[];pet.bg=pet.bg||'';pet.load=Math.min(pet.load||0,110);
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(pet))}catch(e){}};
 const $=id=>document.getElementById(id);
 
@@ -187,7 +187,7 @@ function tick(){
   pet.clean=clamp(pet.clean-.08*mins);pet.energy=clamp(pet.energy+(pet.sleeping?2:-.07)*mins);
   if(pet.sleeping&&pet.energy>=100)pet.sleeping=false;
   if(Math.min(pet.hunger,pet.happy,pet.clean)<=0)pet.health=clamp(pet.health-.2*mins);else pet.health=clamp(pet.health+.05*mins);
-  if(pet.hunger<=0)pet.health=clamp(pet.health-.3*mins);pet.load=Math.max(0,(pet.load||0)-mins);pet.cs=(pet.cs||0)+(pet.hunger+pet.happy+pet.clean+pet.energy)/400*mins;pet.cm=(pet.cm||0)+mins;
+  if(pet.hunger<=0)pet.health=clamp(pet.health-.3*mins);pet.load=Math.max(0,(pet.load||0)-1.5*mins);pet.cs=(pet.cs||0)+(pet.hunger+pet.happy+pet.clean+pet.energy)/400*mins;pet.cm=(pet.cm||0)+mins;
   if(Math.min(pet.hunger,pet.happy,pet.clean)<=0){if(!pet.mf){pet.mis=(pet.mis||0)+1;pet.mf=1}}else pet.mf=0;
   if(pet.health<=0)pet.alive=false;
 }
@@ -583,6 +583,21 @@ function pvpFrame(now){
   msg.slice(0,2).forEach((l,i)=>txt(l,W/2,H-22+i*13,11));
 }
 
+/* ---- screen colours ---- */
+const THEMES=[{id:'green',n:'Classic Green',lcd:'#a3c10f',ink:'#12390f'},{id:'white',n:'Soft White',lcd:'#f4f1ea',ink:'#2a2a33'},{id:'lavender',n:'Pale Lavender',lcd:'#e4dcf5',ink:'#2d2152'},
+ {id:'sky',n:'Sky Blue',lcd:'#bfe3f2',ink:'#0f2a44'},{id:'peach',n:'Peach',lcd:'#ffd9c2',ink:'#4a1f14'},{id:'mint',n:'Mint',lcd:'#cdeedd',ink:'#0f3d2e'},
+ {id:'butter',n:'Butter',lcd:'#fbefa8',ink:'#3d3300'},{id:'rose',n:'Rose',lcd:'#f7c9d6',ink:'#4a1030'},{id:'amber',n:'Amber',lcd:'#ffb347',ink:'#3b1d00'},{id:'midnight',n:'Midnight',lcd:'#101826',ink:'#7fd3ff'}];
+let themeId='green';try{themeId=localStorage.getItem('pocketpet.theme')||'green'}catch(e){}
+function applyTheme(id){
+  const t=THEMES.find(x=>x.id===id)||THEMES[0],r=document.documentElement.style;themeId=t.id;
+  if(t.id==='green'){r.removeProperty('--lcd');r.removeProperty('--ink')}else{r.setProperty('--lcd',t.lcd);r.setProperty('--ink',t.ink)}
+  try{localStorage.setItem('pocketpet.theme',t.id)}catch(e){}
+}
+function colorMenu(){
+  openSheet('Screen colour',[{rows:THEMES.map(t=>({i:'<span style="display:inline-block;width:34px;height:34px;border-radius:9px;background:'+t.lcd+';border:3px solid '+t.ink+'"></span>',t:t.n,s:t.id===themeId?'In use':'Tap to apply',fn:()=>{applyTheme(t.id);keep(colorMenu)}}))}]);
+}
+applyTheme(themeId);
+
 /* ---- mini-games ---- */
 const LANES=[60,150,240];
 function startGame(kind){
@@ -650,7 +665,7 @@ function busy(){return anim||game}
 function feed(k){
   if(!ok()){beep(SND.no);flash(pet.sleeping?'Your pet is asleep.':'Not hungry right now.');return}
   if(pet.pts<COST[k]){beep(SND.no);flash('Not enough ★ points.');return}
-  closeSheet();pet.pts-=COST[k];const L=(pet.load||0)+GAIN[k];FOODFX[k]();pet.load=L;if(L>100){pet.health=clamp(pet.health-Math.max(4,(L-100)*.35));pet.happy=clamp(pet.happy-6);flash('Too much food! Tummy ache.')}pet.energy=clamp(pet.energy+({rice:4,burger:8,salad:3,cake:6,candy:6}[k]||0));save();
+  closeSheet();pet.pts-=COST[k];const L=(pet.load||0)+GAIN[k];FOODFX[k]();pet.load=Math.min(L,110);if(L>100){pet.health=clamp(pet.health-Math.max(4,(L-100)*.35));pet.happy=clamp(pet.happy-6);flash('Too much food! Tummy ache.')}pet.energy=clamp(pet.energy+({rice:4,burger:8,salad:3,cake:6,candy:6}[k]||0));save();
   anim={kind:'eat',f:k,t0:performance.now(),dur:2100,bites:0};render();
 }
 function clean(){
@@ -698,6 +713,7 @@ const MENUS={
     openSheet('Care',[{rows:[
       {i:'🫧',t:'Clean up',s:'Wash away the mess',fn:clean},
       {i:'💊',t:'Medicine',s:'Restores health when your pet is unwell',fn:medicine},
+      {i:'🎨',t:'Screen colour',s:'Change the pet screen palette',fn:colorMenu},
       {i:'\ud83e\udd5a',t:'Adopt a new egg',s:'Replaces your current pet',fn:pickSpecies},
       {i:'🪪',t:'Change name',s:'Administrative fee for legally renaming your pet',c:'★ 200',dis:pet.pts<200,fn:renamePet}]}]);
   },
